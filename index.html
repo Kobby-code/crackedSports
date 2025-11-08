@@ -1,33 +1,246 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="google-adsense-account" content="ca-pub-8567527615694422">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="keywords" content="live football, basketball, sports streaming, free matches, CrackedSports, watch football online">
-  <meta name="author" content="CrackedSports Team">
-  <meta name="robots" content="index, follow">
-  <title>CrackedSports - Live Football</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PitchLive - Live & Upcoming Football</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css" />
   <style>
-    body.dark-mode { background-color: #121212; color: #f1f1f1; }
-    .card.dark-mode { background-color: #1e1e1e; color: #f1f1f1; }
-    .match-card:hover { transform: translateY(-3px); }
-    a.logo { text-decoration: none; color: inherit; }
+    body { background-color: #0d1117; color: white; font-family: 'Poppins', sans-serif; }
+    header { display: flex; align-items: center; padding: 15px 25px; background-color: #161b22; border-bottom: 1px solid #30363d; }
+    header img { height: 40px; cursor: pointer; }
+    header h1 { margin-left: 15px; font-size: 1.5rem; font-weight: bold; cursor: pointer; color: white; }
+    .section-title { font-size: 1.2rem; font-weight: bold; margin: 20px 10px 10px; }
+    .slider-container { display: flex; overflow-x: auto; scroll-behavior: smooth; padding: 0 10px 10px; gap: 15px; }
+    .slider-container::-webkit-scrollbar { display: none; }
+    .match-card { min-width: 220px; background-color: #1e242b; border-radius: 10px; padding: 10px; text-align: center; transition: transform 0.2s; cursor: pointer; position: relative; }
+    .match-card:hover { transform: translateY(-4px); }
+    .match-card img { width: 100%; height: 120px; object-fit: cover; border-radius: 8px; }
+    .live-badge { position: absolute; top: 10px; left: 10px; background: #e84545; color: white; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; }
+    .empty-state { color: #9aa3ad; padding: 10px; }
   </style>
 </head>
-<body class="bg-light">
+<body>
+  <header>
+    <img src="assets/images/logo.png" alt="PitchLive Logo" onclick="window.location.href='index.html'" />
+    <h1 onclick="window.location.href='index.html'">PitchLive</h1>
+  </header>
 
-  <div class="container py-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-      <a href="index.html" class="logo"><h1 class="fw-bold">⚡ CrackedSports</h1></a>
-      <button id="toggleMode" class="btn btn-outline-dark">Dark Mode</button>
+  <main class="container-fluid mt-3">
+    <section>
+      <div class="section-title"><i class="fas fa-fire"></i> Today's Popular Matches</div>
+      <div id="popularMatches" class="slider-container"><div class="empty-state">Loading…</div></div>
+    </section>
+
+    <section>
+      <div class="section-title"><i class="fas fa-futbol"></i> Live Matches</div>
+      <div id="liveMatches" class="slider-container"><div class="empty-state">Loading…</div></div>
+    </section>
+
+    <section>
+      <div class="section-title"><i class="fas fa-clock"></i> Upcoming Matches</div>
+      <div id="upcomingMatches" class="slider-container"><div class="empty-state">Loading…</div></div>
+    </section>
+  </main>
+
+  <!-- Countdown Modal -->
+  <div class="modal fade" id="countdownModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content bg-dark text-white">
+        <div class="modal-header">
+          <h5 class="modal-title" id="modalMatchTitle"></h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body text-center">
+          <img id="modalMatchThumbnail" src="assets/images/logo.png" alt="Match Thumbnail" style="width:100%;max-width:360px;height:auto;object-fit:cover;margin-bottom:15px;border-radius:8px;" />
+          <div id="countdownTimer" style="font-size:1.25rem;"></div>
+        </div>
+      </div>
     </div>
-
-    <h4 class="mb-3">Live Football Matches</h4>
-    <div id="matches" class="row g-4"></div>
   </div>
 
-  <script src="script/main.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    const apiBase = 'https://streamed.pk/api/matches';
+
+    function normalizeResponse(data){
+      if(!data) return [];
+      if(Array.isArray(data)) return data;
+      if(Array.isArray(data.data)) return data.data;
+      if(Array.isArray(data.matches)) return data.matches;
+      for(const k of Object.keys(data)) if(Array.isArray(data[k])) return data[k];
+      return [];
+    }
+
+    function esc(s){ return String(s||'').replace(/'/g,"\\'").replace(/"/g,'\"'); }
+
+    function buildThumbnail(match){
+      if(match.teams?.home?.badge && match.teams?.away?.badge){
+        return `https://streamed.pk/api/images/poster/${match.teams.home.badge}/${match.teams.away.badge}.webp`;
+      }
+      if(match.poster){
+        return `https://streamed.pk/api/images/proxy/${match.poster}.webp`;
+      }
+      if(match.teams?.home?.badge){
+        return `https://streamed.pk/api/images/badge/${match.teams.home.badge}.webp`;
+      }
+      if(match.teams?.away?.badge){
+        return `https://streamed.pk/api/images/badge/${match.teams.away.badge}.webp`;
+      }
+      return 'assets/images/logo.png';
+    }
+
+    function buildAlt(match){ return match.title || match.name || 'Match Image'; }
+
+    // Render function used for live and popular (popular has special behavior)
+    function renderMatches(containerId, matches, options = {}){
+      const { treatPopularLikeUpcoming = false, liveIdSet = new Set() } = options;
+      const container = document.getElementById(containerId);
+      if(!container) return;
+
+      // only football
+      matches = (matches||[]).filter(m => (m.category||'').toLowerCase() === 'football');
+      if(matches.length === 0){ container.innerHTML = '<div class="empty-state">No football matches available.</div>'; return; }
+
+      const now = Date.now();
+      const html = matches.map(match => {
+        const title = match.title || match.name || 'Untitled Match';
+        const category = match.category || 'Sports';
+        const thumb = buildThumbnail(match);
+        const altText = esc(buildAlt(match));
+        const id = match.id || (match.sources && match.sources[0] && match.sources[0].id) || '';
+
+        // determine live status: from API flag, status string, or from liveIdSet (fetched live list)
+        const isLive = !!(match.isLive || (match.status && String(match.status).toLowerCase() === 'live') || liveIdSet.has(match.id));
+
+        // For popular: if it's live -> link to watch. If not live -> show countdown modal (same as upcoming)
+        if(treatPopularLikeUpcoming){
+          if(isLive){
+            return `
+              <div class='match-card' onclick="${ id ? `window.location.href='watch.html?id=${id}'` : '' }">
+                <div class='live-badge'>LIVE</div>
+                <img src='${thumb}' alt='${altText}' loading='lazy' width='300' height='150' />
+                <h6 class='mt-2'>${esc(title)}</h6>
+                <small>${esc(category)}</small>
+              </div>
+            `;
+          } else {
+            // upcoming popular -> countdown modal
+            return `
+              <div class='match-card' onclick="showCountdownModal('${esc(title)}', ${match.date || 0}, '${esc(thumb)}', '${altText}')">
+                <img src='${thumb}' alt='${altText}' loading='lazy' width='300' height='150' />
+                <h6 class='mt-2'>${esc(title)}</h6>
+                <small>${esc(category)}</small>
+              </div>
+            `;
+          }
+        }
+
+        // default behavior (used for live section)
+        if(isLive){
+          return `
+            <div class='match-card' onclick="${ id ? `window.location.href='watch.html?id=${id}'` : '' }">
+              <div class='live-badge'>LIVE</div>
+              <img src='${thumb}' alt='${altText}' loading='lazy' width='300' height='150' />
+              <h6 class='mt-2'>${esc(title)}</h6>
+              <small>${esc(category)}</small>
+            </div>
+          `;
+        }
+
+        // non-live default
+        return `
+          <div class='match-card' onclick="showCountdownModal('${esc(title)}', ${match.date || 0}, '${esc(thumb)}', '${altText}')">
+            <img src='${thumb}' alt='${altText}' loading='lazy' width='300' height='150' />
+            <h6 class='mt-2'>${esc(title)}</h6>
+            <small>${esc(category)}</small>
+          </div>
+        `;
+      }).join('');
+
+      container.innerHTML = html;
+    }
+
+    function renderUpcomingMatches(containerId, upcomingMatches){
+      const container = document.getElementById(containerId);
+      if(!container) return;
+
+      const now = Date.now();
+      let upcoming = (upcomingMatches||[]).filter(m => (m.date||0) > now);
+      upcoming.sort((a,b) => (a.date||0) - (b.date||0));
+
+      if(upcoming.length === 0){ container.innerHTML = '<div class="empty-state">No upcoming football matches.</div>'; return; }
+
+      const html = upcoming.map(match => {
+        const thumb = buildThumbnail(match);
+        const altText = esc(buildAlt(match));
+        return `
+          <div class="match-card" onclick="showCountdownModal('${esc(match.title)}', ${match.date || 0}, '${esc(thumb)}', '${altText}')">
+            <img src="${thumb}" alt="${altText}" loading="lazy" width="300" height="150" />
+            <h6 class="mt-2">${esc(match.title)}</h6>
+            <small>${esc(match.category)}</small>
+          </div>
+        `;
+      }).join('');
+
+      container.innerHTML = html;
+    }
+
+    function showCountdownModal(title, matchTime, thumb, altText){
+      const modalTitle = document.getElementById('modalMatchTitle');
+      const timerEl = document.getElementById('countdownTimer');
+      const modalThumb = document.getElementById('modalMatchThumbnail');
+      modalTitle.textContent = title;
+      modalThumb.src = thumb || 'assets/images/logo.png';
+      modalThumb.alt = altText || 'Match Thumbnail';
+
+      const modal = new bootstrap.Modal(document.getElementById('countdownModal'));
+      modal.show();
+
+      clearInterval(window.countdownInterval);
+      function updateTimer(){
+        const now = Date.now();
+        const diff = (matchTime||0) - now;
+        if(diff <= 0){ timerEl.textContent = 'Match Started!'; clearInterval(window.countdownInterval); return; }
+        const hours = Math.floor(diff/3600000);
+        const minutes = Math.floor((diff%3600000)/60000);
+        const seconds = Math.floor((diff%60000)/1000);
+        timerEl.textContent = `Match starts in: ${hours}h ${minutes}m ${seconds}s`;
+      }
+      updateTimer();
+      window.countdownInterval = setInterval(updateTimer, 1000);
+    }
+
+    async function fetchMatches(){
+      try{
+        // 1) get live matches
+        const liveRes = await fetch(`${apiBase}/live`);
+        const liveData = normalizeResponse(await liveRes.json());
+        const liveIdSet = new Set((liveData||[]).map(m=>m.id));
+
+        // render live section (use liveIdSet internally)
+        renderMatches('liveMatches', liveData, { liveIdSet });
+
+        // 2) all football matches (for upcoming / popular filtering)
+        const allRes = await fetch(`${apiBase}/football`);
+        const allData = normalizeResponse(await allRes.json());
+        const upcoming = (allData||[]).filter(m => !liveIdSet.has(m.id));
+
+        // render upcoming
+        renderUpcomingMatches('upcomingMatches', upcoming);
+
+        // 3) popular (we want same behavior: if popular match is live -> link to watch; if not -> countdown)
+        const popularRes = await fetch(`${apiBase}/football/popular`);
+        let popularData = normalizeResponse(await popularRes.json()) || [];
+        // mark popular items with live status based on liveIdSet to be safe
+        popularData = popularData.map(m => ({ ...m, isLive: !!(m.isLive || liveIdSet.has(m.id) || (m.status && String(m.status).toLowerCase()==='live')) }));
+        renderMatches('popularMatches', popularData, { treatPopularLikeUpcoming: true, liveIdSet });
+
+      }catch(err){ console.error('Fetch error:', err); }
+    }
+
+    fetchMatches();
+  </script>
 </body>
 </html>
