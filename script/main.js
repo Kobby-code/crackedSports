@@ -21,17 +21,66 @@ function normalizeResponse(data) {
 
 function esc(s) { return String(s || '').replace(/'/g, "\\'").replace(/"/g, '\"'); }
 
-function buildThumbnail(match) {
-  if (match.teams?.home?.badge && match.teams?.away?.badge) {
-    return `https://streamed.pk/api/images/poster/${match.teams.home.badge}/${match.teams.away.badge}.webp`;
-  }
-  if (match.poster) return `https://streamed.pk/api/images/proxy/${match.poster}.webp`;
-  if (match.teams?.home?.badge) return `https://streamed.pk/api/images/badge/${match.teams.home.badge}.webp`;
-  if (match.teams?.away?.badge) return `https://streamed.pk/api/images/badge/${match.teams.away.badge}.webp`;
-  return 'assets/images/logo.png';
-}
+/* ---------------- Robust Image Helper ---------------- */
+/**
+ * getMatchImage(match)
+ * Returns { src, alt, isExternal } normalized for use in <img>.
+ */
+function getMatchImage(match) {
+  const fallback = 'assets/images/logo.png';
+  const alt = (match && (match.title || match.name)) ? (match.title || match.name) : 'Match Image';
 
-function buildAlt(match) { return match.title || match.name || 'Match Image'; }
+  function isFullUrl(s) {
+    try { return !!(s && (s.startsWith('http://') || s.startsWith('https://'))); }
+    catch (e) { return false; }
+  }
+
+  function hasExtension(s) {
+    if (!s || typeof s !== 'string') return false;
+    return /\.(png|jpe?g|gif|webp|svg)$/i.test(s);
+  }
+
+  function buildProxyPoster(tokenOrPath) {
+    if (!tokenOrPath) return null;
+    if (isFullUrl(tokenOrPath)) return tokenOrPath;
+    const normalized = String(tokenOrPath).replace(/^\/+/, '');
+    if (hasExtension(normalized)) {
+      return `https://streamed.pk/api/images/proxy/${normalized}`;
+    }
+    return `https://streamed.pk/api/images/proxy/${normalized}.webp`;
+  }
+
+  function buildBadgeUrl(badge) {
+    if (!badge) return null;
+    if (isFullUrl(badge)) return badge;
+    const b = String(badge).replace(/^\/+/, '');
+    if (hasExtension(b)) return `https://streamed.pk/api/images/badge/${b}`;
+    return `https://streamed.pk/api/images/badge/${b}.webp`;
+  }
+
+  const homeBadge = match?.teams?.home?.badge;
+  const awayBadge = match?.teams?.away?.badge;
+
+  if (homeBadge && awayBadge) {
+    const hb = String(homeBadge).replace(/^\/+/, '');
+    const ab = String(awayBadge).replace(/^\/+/, '');
+    if (!isFullUrl(hb) && !isFullUrl(ab)) {
+      return { src: `https://streamed.pk/api/images/poster/${hb}/${ab}.webp`, alt, isExternal: true };
+    }
+  }
+
+  if (match?.poster) {
+    const posterSrc = buildProxyPoster(match.poster);
+    if (posterSrc) return { src: posterSrc, alt, isExternal: isFullUrl(posterSrc) || posterSrc.startsWith('https://') };
+  }
+
+  const homeBadgeUrl = buildBadgeUrl(homeBadge);
+  if (homeBadgeUrl) return { src: homeBadgeUrl, alt, isExternal: true };
+  const awayBadgeUrl = buildBadgeUrl(awayBadge);
+  if (awayBadgeUrl) return { src: awayBadgeUrl, alt, isExternal: true };
+
+  return { src: fallback, alt, isExternal: false };
+}
 
 /* ---------------- Countdown Modal ---------------- */
 function showCountdownModal(title, matchTime, thumb, altText) {
@@ -84,8 +133,9 @@ function renderMatches(containerId, matches, options = {}) {
   const html = matches.map(match => {
     const title = match.title || match.name || 'Untitled Match';
     const category = match.category || 'Sports';
-    const thumb = buildThumbnail(match);
-    const altText = esc(buildAlt(match));
+    const imgInfo = getMatchImage(match);
+    const thumbSrc = imgInfo.src;
+    const altText = esc(imgInfo.alt);
     const id = match.id || (match.sources && match.sources[0] && match.sources[0].id) || '';
     const isLive = !!(match.isLive || (match.status && String(match.status).toLowerCase() === 'live') || liveIdSet.has(match.id));
 
@@ -94,14 +144,14 @@ function renderMatches(containerId, matches, options = {}) {
         return `
           <div class='match-card' onclick="${id ? `window.location.href='watch.html?id=${id}'` : ''}">
             <div class='live-badge'>LIVE</div>
-            <img src='${thumb}' alt='${altText}' loading='lazy' />
+            <img src='${thumbSrc}' alt='${altText}' loading='lazy' onerror="this.onerror=null;this.src='assets/images/logo.png'" />
             <h6 class='mt-2'>${esc(title)}</h6>
             <small>${esc(category)}</small>
           </div>`;
       } else {
         return `
-          <div class='match-card' onclick="showCountdownModal('${esc(title)}', ${match.date || 0}, '${esc(thumb)}', '${altText}')">
-            <img src='${thumb}' alt='${altText}' loading='lazy' />
+          <div class='match-card' onclick="showCountdownModal('${esc(title)}', ${match.date || 0}, '${esc(thumbSrc)}', '${altText}')">
+            <img src='${thumbSrc}' alt='${altText}' loading='lazy' onerror="this.onerror=null;this.src='assets/images/logo.png'" />
             <h6 class='mt-2'>${esc(title)}</h6>
             <small>${esc(category)}</small>
           </div>`;
@@ -112,15 +162,15 @@ function renderMatches(containerId, matches, options = {}) {
       return `
         <div class='match-card' onclick="${id ? `window.location.href='watch.html?id=${id}'` : ''}">
           <div class='live-badge'>LIVE</div>
-          <img src='${thumb}' alt='${altText}' loading='lazy' />
+          <img src='${thumbSrc}' alt='${altText}' loading='lazy' onerror="this.onerror=null;this.src='assets/images/logo.png'" />
           <h6 class='mt-2'>${esc(title)}</h6>
           <small>${esc(category)}</small>
         </div>`;
     }
 
     return `
-      <div class='match-card' onclick="showCountdownModal('${esc(title)}', ${match.date || 0}, '${esc(thumb)}', '${altText}')">
-        <img src='${thumb}' alt='${altText}' loading='lazy' />
+      <div class='match-card' onclick="showCountdownModal('${esc(title)}', ${match.date || 0}, '${esc(thumbSrc)}', '${altText}')">
+        <img src='${thumbSrc}' alt='${altText}' loading='lazy' onerror="this.onerror=null;this.src='assets/images/logo.png'" />
         <h6 class='mt-2'>${esc(title)}</h6>
         <small>${esc(category)}</small>
       </div>`;
@@ -142,11 +192,12 @@ function renderUpcomingMatches(containerId, upcomingMatches) {
   }
 
   const html = upcoming.map(match => {
-    const thumb = buildThumbnail(match);
-    const altText = esc(buildAlt(match));
+    const imgInfo = getMatchImage(match);
+    const thumbSrc = imgInfo.src;
+    const altText = esc(imgInfo.alt);
     return `
-      <div class="match-card" onclick="showCountdownModal('${esc(match.title)}', ${match.date || 0}, '${esc(thumb)}', '${altText}')">
-        <img src="${thumb}" alt="${altText}" loading="lazy" />
+      <div class="match-card" onclick="showCountdownModal('${esc(match.title)}', ${match.date || 0}, '${esc(thumbSrc)}', '${altText}')">
+        <img src="${thumbSrc}" alt="${altText}" loading="lazy" onerror="this.onerror=null;this.src='assets/images/logo.png'" />
         <h6 class="mt-2">${esc(match.title)}</h6>
         <small>${esc(match.category)}</small>
       </div>`;
@@ -184,6 +235,7 @@ function loadPlayerPage(matchId) {
 
       // ---------------- Other Matches Sidebar ----------------
       const sidebar = document.getElementById('otherMatches');
+      if (!sidebar) return;
       sidebar.innerHTML = ''; // clear previous content
 
       // Only live football matches, exclude current match
@@ -198,12 +250,16 @@ function loadPlayerPage(matchId) {
       otherLiveFootball.forEach(m => {
         const div = document.createElement('div');
         div.className = 'col-12';
+        const imgInfo = getMatchImage(m);
+        const thumbSrc = imgInfo.src;
+        const altText = esc(imgInfo.alt);
+
         div.innerHTML = `
           <div class="card">
-            ${m.poster ? `<img src="https://streamed.pk${m.poster}.webp" class="card-img-top" loading="lazy">` : ''}
+            ${thumbSrc ? `<img src="${thumbSrc}" alt="${altText}" class="card-img-top" loading="lazy" onerror="this.onerror=null;this.src='assets/images/logo.png'">` : ''}
             <div class="card-body p-2">
-              <h6>${m.title}</h6>
-              <small class="text-muted">${new Date(m.date).toLocaleTimeString()}</small>
+              <h6>${esc(m.title)}</h6>
+              <small class="text-muted">${m.date ? new Date(m.date).toLocaleTimeString() : ''}</small>
             </div>
           </div>
         `;
