@@ -9,6 +9,8 @@ if (toggleModeBtn) {
 
 /* ---------------- Utility Functions ---------------- */
 const apiBase = 'https://streamed.pk/api/matches';
+const REFRESH_INTERVAL = 30000; // 30s
+let currentMatchId = null; // will track the currently-playing match on watch page
 
 function normalizeResponse(data) {
   if (!data) return [];
@@ -28,8 +30,16 @@ function getMatchImage(match) {
 
   function isFullUrl(s) { try { return !!(s && (s.startsWith('http://') || s.startsWith('https://'))); } catch (e) { return false; } }
   function hasExtension(s) { return !!(s && /\.(png|jpe?g|gif|webp|svg)$/i.test(s)); }
-  function buildProxyPoster(tokenOrPath) { if (!tokenOrPath) return null; const normalized = String(tokenOrPath).replace(/^\/+/, ''); return isFullUrl(normalized) ? normalized : `https://streamed.pk/api/images/proxy/${normalized}${hasExtension(normalized) ? '' : '.webp'}`; }
-  function buildBadgeUrl(badge) { if (!badge) return null; const b = String(badge).replace(/^\/+/, ''); return isFullUrl(b) ? b : `https://streamed.pk/api/images/badge/${b}${hasExtension(b) ? '' : '.webp'}`; }
+  function buildProxyPoster(tokenOrPath) {
+    if (!tokenOrPath) return null;
+    const normalized = String(tokenOrPath).replace(/^\/+/, '');
+    return isFullUrl(normalized) ? normalized : `https://streamed.pk/api/images/proxy/${normalized}${hasExtension(normalized) ? '' : '.webp'}`;
+  }
+  function buildBadgeUrl(badge) {
+    if (!badge) return null;
+    const b = String(badge).replace(/^\/+/, '');
+    return isFullUrl(b) ? b : `https://streamed.pk/api/images/badge/${b}${hasExtension(b) ? '' : '.webp'}`;
+  }
 
   const homeBadge = match?.teams?.home?.badge;
   const awayBadge = match?.teams?.away?.badge;
@@ -111,6 +121,9 @@ function renderMatches(containerId, matches, options = {}) {
   }).join('');
 
   container.innerHTML = html;
+
+  // After rendering, ensure carousels are swipe-enabled
+  enableCarouselSwipeFor(container);
 }
 
 function renderUpcomingMatches(containerId, upcomingMatches) {
@@ -133,10 +146,14 @@ function renderUpcomingMatches(containerId, upcomingMatches) {
   }).join('');
 
   container.innerHTML = html;
+  enableCarouselSwipeFor(container);
 }
 
 /* ---------------- Player Page Rendering with Multi-Source ---------------- */
 function loadPlayerPage(matchId) {
+  // store current match id so refresh won't affect the playing iframe
+  currentMatchId = matchId;
+
   const player = document.getElementById('player');
   if (!player || !matchId) return;
 
@@ -149,7 +166,7 @@ function loadPlayerPage(matchId) {
       document.getElementById('matchTitle').textContent = match.title;
       document.getElementById('matchTime').textContent = new Date(match.date).toLocaleString();
 
-      // Stream buttons container
+      // Stream buttons container - create if missing
       let btnContainer = document.getElementById('streamButtons');
       if (!btnContainer) {
         btnContainer = document.createElement('div');
@@ -159,109 +176,236 @@ function loadPlayerPage(matchId) {
       }
       btnContainer.innerHTML = '';
 
-      function loadSource(source) {
-        fetch(`https://streamed.pk/api/stream/${source.source}/${source.id}`)
-          .then(res => res.json())
-          .then(streams => {
-            const stream = streams[0];
-            if (stream && stream.embedUrl) player.src = stream.embedUrl;
-          });
+      // Helper to fetch and load a source (and mark active button)
+      async function fetchAndLoadSource(srcObj, markActive = true) {
+        try {
+          const res = await fetch(`https://streamed.pk/api/stream/${srcObj.source}/${srcObj.id}`);
+          const streams = await res.json();
+          const stream = streams && streams[0] ? streams[0] : null;
+          if (stream && stream.embedUrl) {
+            player.src = stream.embedUrl;
+          } else {
+            // if no embed, show noStream message (but do not remove iframe)
+            const noStreamEl = document.getElementById('noStream');
+            if (noStreamEl) noStreamEl.style.display = 'block';
+          }
+
+          // active button visual
+          if (markActive) {
+            document.querySelectorAll('#streamButtons button').forEach(b => {
+              b.classList.toggle('active', b.dataset.sourceName && b.dataset.sourceName.toLowerCase() === String(srcObj.source).toLowerCase());
+            });
+          }
+        } catch (err) {
+          console.error('Error loading source:', err);
+        }
       }
 
       if (match.sources && match.sources.length > 0) {
-        if (match.sources.length === 1) loadSource(match.sources[0]);
-        else {
-          match.sources.forEach(src => {
+        if (match.sources.length === 1) {
+          // single source: auto-load, no buttons shown
+          fetchAndLoadSource(match.sources[0], false);
+        } else {
+          // multiple sources: create buttons and load first by default
+          match.sources.forEach((src, i) => {
             const btn = document.createElement('button');
-            btn.textContent = src.source.toUpperCase();
+            btn.textContent = (src.source || `Source ${i+1}`).toUpperCase();
             btn.className = 'btn btn-sm btn-outline-primary';
-            btn.addEventListener('click', () => loadSource(src));
+            btn.dataset.sourceName = src.source || (`source${i+1}`);
+            btn.addEventListener('click', () => fetchAndLoadSource(src, true));
             btnContainer.appendChild(btn);
           });
-          loadSource(match.sources[0]);
+          // default to first source
+          fetchAndLoadSource(match.sources[0], true);
         }
-      } else document.getElementById('noStream').style.display = 'block';
+      } else {
+        const noStreamEl = document.getElementById('noStream');
+        if (noStreamEl) noStreamEl.style.display = 'block';
+      }
 
-      // Other Matches Sidebar
+      // ---------------- Other Matches Sidebar (only live football) ----------------
       const sidebar = document.getElementById('otherMatches');
       if (!sidebar) return;
       sidebar.innerHTML = '';
       const otherLiveFootball = matches.filter(m => m.id != matchId && (m.category || '').toLowerCase() === 'football');
-      if (otherLiveFootball.length === 0) sidebar.innerHTML = '<p class="text-muted">No other live football matches.</p>';
+      if (otherLiveFootball.length === 0) {
+        sidebar.innerHTML = '<p class="text-muted">No other live football matches.</p>';
+        return;
+      }
 
       otherLiveFootball.forEach(m => {
         const div = document.createElement('div');
-        div.className = 'col-12';
+        div.className = 'col-12 col-sm-6 col-md-12'; // slightly smaller on mobile as requested
         const imgInfo = getMatchImage(m);
         const thumbSrc = imgInfo.src;
         const altText = esc(imgInfo.alt);
-        div.innerHTML = `<div class="card">${thumbSrc ? `<img src="${thumbSrc}" alt="${altText}" class="card-img-top" loading="lazy" onerror="this.onerror=null;this.src='assets/images/logo.png'">` : ''}<div class="card-body p-2"><h6>${esc(m.title)}</h6><small class="text-muted">${m.date ? new Date(m.date).toLocaleTimeString() : ''}</small></div></div>`;
+        div.innerHTML = `
+          <div class="card" style="cursor:pointer">
+            ${thumbSrc ? `<img src="${thumbSrc}" alt="${altText}" class="card-img-top" loading="lazy" onerror="this.onerror=null;this.src='assets/images/logo.png'">` : ''}
+            <div class="card-body p-2">
+              <h6>${esc(m.title)}</h6>
+              <small class="text-muted">${m.date ? new Date(m.date).toLocaleTimeString() : ''}</small>
+            </div>
+          </div>`;
         div.addEventListener('click', () => { window.location.href = `watch.html?id=${m.id}`; });
         sidebar.appendChild(div);
       });
+    })
+    .catch(err => {
+      console.error('loadPlayerPage error:', err);
     });
 }
 
-/* ---------------- Fetch & Render All Matches with Background Refresh ---------------- */
+/* ---------------- Fetch & Render All Matches ---------------- */
 async function fetchAllMatches() {
   try {
     const liveRes = await fetch(`${apiBase}/live`);
     const liveData = normalizeResponse(await liveRes.json());
     const liveIdSet = new Set((liveData || []).map(m => m.id));
+
+    // Render live section (homepage)
     renderMatches('liveMatches', liveData, { liveIdSet });
 
+    // upcoming (exclude live)
     const allRes = await fetch(`${apiBase}/football`);
     const allData = normalizeResponse(await allRes.json());
     const upcoming = (allData || []).filter(m => !liveIdSet.has(m.id));
     renderUpcomingMatches('upcomingMatches', upcoming);
 
+    // popular
     const popularRes = await fetch(`${apiBase}/football/popular`);
     let popularData = normalizeResponse(await popularRes.json()) || [];
     popularData = popularData.map(m => ({ ...m, isLive: !!(m.isLive || liveIdSet.has(m.id) || (m.status && String(m.status).toLowerCase() === 'live')) }));
     renderMatches('popularMatches', popularData, { treatPopularLikeUpcoming: true, liveIdSet });
+
+    // ensure carousels are swipe-enabled after rendering
+    enableCarouselSwipeAll();
   } catch (err) {
     console.error('Fetch error:', err);
   }
 }
 
-// ---------------- Automatic Background Refresh ----------------
-function startBackgroundRefresh() {
-  setInterval(() => {
-    if (!document.getElementById('player')) {
-      // Homepage: refresh everything
-      fetchAllMatches();
-    } else {
-      // Watch page: refresh sidebar only
-      fetch(`${apiBase}/live`)
-        .then(res => res.json())
-        .then(matches => {
-          const matchId = new URLSearchParams(window.location.search).get('id');
-          const sidebar = document.getElementById('otherMatches');
-          if (!sidebar) return;
-          sidebar.innerHTML = '';
-          const otherLiveFootball = normalizeResponse(matches).filter(m => m.id != matchId && (m.category || '').toLowerCase() === 'football');
-          if (otherLiveFootball.length === 0) sidebar.innerHTML = '<p class="text-muted">No other live football matches.</p>';
-          otherLiveFootball.forEach(m => {
-            const div = document.createElement('div');
-            div.className = 'col-12';
-            const imgInfo = getMatchImage(m);
-            const thumbSrc = imgInfo.src;
-            const altText = esc(imgInfo.alt);
-            div.innerHTML = `<div class="card">${thumbSrc ? `<img src="${thumbSrc}" alt="${altText}" class="card-img-top" loading="lazy" onerror="this.onerror=null;this.src='assets/images/logo.png'">` : ''}<div class="card-body p-2"><h6>${esc(m.title)}</h6><small class="text-muted">${m.date ? new Date(m.date).toLocaleTimeString() : ''}</small></div></div>`;
-            div.addEventListener('click', () => { window.location.href = `watch.html?id=${m.id}`; });
-            sidebar.appendChild(div);
-          });
-        });
+/* ---------------- Update Sidebar Only (for watch page background refresh) ---------------- */
+async function updateWatchSidebarOnly(skipMatchId) {
+  try {
+    const liveRes = await fetch(`${apiBase}/live`);
+    const liveData = normalizeResponse(await liveRes.json());
+    const sidebar = document.getElementById('otherMatches');
+    if (!sidebar) return;
+
+    sidebar.innerHTML = '';
+    const otherLiveFootball = liveData.filter(m => m.id != skipMatchId && (m.category || '').toLowerCase() === 'football');
+    if (otherLiveFootball.length === 0) {
+      sidebar.innerHTML = '<p class="text-muted">No other live football matches.</p>';
+      return;
     }
-  }, 30000); // refresh every 30 seconds
+
+    otherLiveFootball.forEach(m => {
+      const div = document.createElement('div');
+      div.className = 'col-12 col-sm-6 col-md-12';
+      const imgInfo = getMatchImage(m);
+      const thumbSrc = imgInfo.src;
+      const altText = esc(imgInfo.alt);
+      div.innerHTML = `
+        <div class="card" style="cursor:pointer">
+          ${thumbSrc ? `<img src="${thumbSrc}" alt="${altText}" class="card-img-top" loading="lazy" onerror="this.onerror=null;this.src='assets/images/logo.png'">` : ''}
+          <div class="card-body p-2">
+            <h6>${esc(m.title)}</h6>
+            <small class="text-muted">${m.date ? new Date(m.date).toLocaleTimeString() : ''}</small>
+          </div>
+        </div>`;
+      div.addEventListener('click', () => { window.location.href = `watch.html?id=${m.id}`; });
+      sidebar.appendChild(div);
+    });
+  } catch (err) {
+    console.error('updateWatchSidebarOnly error:', err);
+  }
+}
+
+/* ---------------- Carousel Swipe Helpers ---------------- */
+function enableCarouselSwipeFor(container) {
+  if (!container) return;
+  // mark the container to avoid attaching listeners twice
+  if (container.dataset.swipeAttached === '1') return;
+  container.dataset.swipeAttached = '1';
+
+  let isDown = false;
+  let startX;
+  let scrollLeft;
+
+  container.addEventListener('mousedown', function (e) {
+    isDown = true;
+    container.classList.add('active');
+    startX = e.pageX - container.offsetLeft;
+    scrollLeft = container.scrollLeft;
+  });
+
+  container.addEventListener('mouseleave', function () {
+    isDown = false;
+    container.classList.remove('active');
+  });
+
+  container.addEventListener('mouseup', function () {
+    isDown = false;
+    container.classList.remove('active');
+  });
+
+  container.addEventListener('mousemove', function (e) {
+    if (!isDown) return;
+    e.preventDefault();
+    const x = e.pageX - container.offsetLeft;
+    const walk = (x - startX) * 1.5; // scroll speed
+    container.scrollLeft = scrollLeft - walk;
+  });
+
+  // Touch support
+  let touchStartX = 0;
+  container.addEventListener('touchstart', function (e) {
+    touchStartX = e.touches[0].clientX;
+  }, { passive: true });
+
+  container.addEventListener('touchmove', function (e) {
+    const touchX = e.touches[0].clientX;
+    container.scrollLeft += (touchStartX - touchX) * 1.5;
+    touchStartX = touchX;
+  }, { passive: true });
+}
+
+function enableCarouselSwipeAll() {
+  document.querySelectorAll('.slider-container').forEach(container => enableCarouselSwipeFor(container));
+}
+
+/* ---------------- Background Refresh ---------------- */
+function startBackgroundRefresh() {
+  // initial background update will happen after initial fetchAllMatches() and loadPlayerPage
+  setInterval(() => {
+    // If on watch page (player exists), update only sidebar (do not touch iframe)
+    if (document.getElementById('player')) {
+      // don't reload the player or stream buttons
+      const params = new URLSearchParams(window.location.search);
+      const matchId = params.get('id');
+      updateWatchSidebarOnly(matchId || currentMatchId);
+      // still refresh homepage data in background (for users who switch tabs)
+      // but do not touch player
+      fetchAllMatches(); // this will update lists; it will not touch iframe
+    } else {
+      // homepage: safe to refresh everything
+      fetchAllMatches();
+    }
+  }, REFRESH_INTERVAL);
 }
 
 /* ---------------- Initialize ---------------- */
 fetchAllMatches();
+
 if (document.getElementById('player')) {
   const params = new URLSearchParams(window.location.search);
   const matchId = params.get('id');
   if (matchId) loadPlayerPage(matchId);
 }
 
+// Start background refresh after initial fetches
 startBackgroundRefresh();
+
+// Ensure carousels are enabled on initial load if elements already present
+enableCarouselSwipeAll();
