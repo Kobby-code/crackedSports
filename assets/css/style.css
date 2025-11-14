@@ -81,3 +81,55 @@ header h1 {
   border-radius: 4px;
   font-weight: bold;
 }
+.slider-container.active {
+  user-select: none;
+  cursor: grabbing;
+}
+
+.other-matches-wrapper .row {
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+/* Ensure iframe cannot overflow width */
+iframe {
+  max-width: 100%;
+  display: block;
+}
+
+/* Ensure sidebar wrapper cannot stretch */
+.other-matches-wrapper {
+  max-height: 80vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+}
+
+/* Hide scrollbar */
+.other-matches-wrapper::-webkit-scrollbar { width: 0; }
+.other-matches-wrapper { scrollbar-width: none; }/* Ensure iframe cannot overflow width */
+iframe {
+  max-width: 100%;
+  display: block;
+}
+
+
+
+/* Hide scrollbar */
+.other-matches-wrapper { scrollbar-width: none; }
+
+/* Hide scrollbar for Chrome, Edge, Safari */
+.other-matches-wrapper::-webkit-scrollbar {
+  width: 0px;
+  background: transparent;
+}
+
+/* Hide scrollbar for Firefox */
+.other-matches-wrapper {
+  scrollbar-width: none;
+}
+
+/* Hide scrollbar for Internet Explorer/old Edge */
+.other-matches-wrapper {
+  -ms-overflow-style: none;
+}
+

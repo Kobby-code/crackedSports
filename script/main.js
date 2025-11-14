@@ -377,19 +377,16 @@ function enableCarouselSwipeAll() {
 
 /* ---------------- Background Refresh ---------------- */
 function startBackgroundRefresh() {
-  // initial background update will happen after initial fetchAllMatches() and loadPlayerPage
   setInterval(() => {
-    // If on watch page (player exists), update only sidebar (do not touch iframe)
-    if (document.getElementById('player')) {
-      // don't reload the player or stream buttons
+    const player = document.getElementById('player');
+
+    if (player) {
+      // On watch page: only update sidebar (do not touch iframe or stream buttons)
       const params = new URLSearchParams(window.location.search);
       const matchId = params.get('id');
       updateWatchSidebarOnly(matchId || currentMatchId);
-      // still refresh homepage data in background (for users who switch tabs)
-      // but do not touch player
-      fetchAllMatches(); // this will update lists; it will not touch iframe
     } else {
-      // homepage: safe to refresh everything
+      // On homepage: safe to refresh all sections
       fetchAllMatches();
     }
   }, REFRESH_INTERVAL);
