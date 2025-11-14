@@ -357,18 +357,6 @@ function enableCarouselSwipeFor(container) {
     const walk = (x - startX) * 1.5; // scroll speed
     container.scrollLeft = scrollLeft - walk;
   });
-
-  // Touch support
-  let touchStartX = 0;
-  container.addEventListener('touchstart', function (e) {
-    touchStartX = e.touches[0].clientX;
-  }, { passive: true });
-
-  container.addEventListener('touchmove', function (e) {
-    const touchX = e.touches[0].clientX;
-    container.scrollLeft += (touchStartX - touchX) * 1.5;
-    touchStartX = touchX;
-  }, { passive: true });
 }
 
 function enableCarouselSwipeAll() {
