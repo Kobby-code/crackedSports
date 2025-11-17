@@ -85,6 +85,39 @@ function showCountdownModal(title, matchTime, thumb, altText) {
 }
 
 /* ---------------- Render Functions ---------------- */
+function formatMatchDate(timestamp) {
+  if (!timestamp) return '';
+
+  const date = new Date(timestamp);
+  const now = new Date();
+
+  // Strip time to compare days only
+  const d1 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const d2 = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+  const diffDays = Math.floor((d2 - d1) / 86400000); // ms in a day
+
+  let label;
+  if (diffDays === 0) {
+    label = 'Today';
+  } else if (diffDays === 1) {
+    label = 'Tomorrow';
+  } else {
+    label = date.toLocaleDateString('en-US', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric'
+    });
+  }
+
+  const time = date.toLocaleTimeString([], {
+    hour: 'numeric',
+    minute: '2-digit'
+  });
+
+  return `${label}, ${time}`;
+}
+
 function renderMatches(containerId, matches, options = {}) {
   const { treatPopularLikeUpcoming = false, liveIdSet = new Set() } = options;
   const container = document.getElementById(containerId);
@@ -106,18 +139,37 @@ function renderMatches(containerId, matches, options = {}) {
     const isLive = !!(match.isLive || (match.status && String(match.status).toLowerCase() === 'live') || liveIdSet.has(match.id));
 
     if (treatPopularLikeUpcoming) {
-      if (isLive) {
-        return `<div class='match-card' onclick="${id ? `window.location.href='watch.html?id=${id}'` : ''}"><div class='live-badge'>LIVE</div><img src='${thumbSrc}' alt='${altText}' loading='lazy' onerror="this.onerror=null;this.src='assets/images/logo.png'" /><h6 class='mt-2'>${esc(title)}</h6><small>${esc(category)}</small></div>`;
+       if (isLive) {
+    return `<div class='match-card' onclick="${id ? `window.location.href='watch.html?id=${id}'` : ''}">
+      <div class='live-badge'>LIVE</div>
+      <img src='${thumbSrc}' alt='${altText}' loading='lazy' onerror="this.onerror=null;this.src='assets/images/logo.png'" />
+      <h6 class='mt-2'>${esc(title)}</h6>
+      <small>${formatMatchDate(match.date)}</small>
+    </div>`;
       } else {
-        return `<div class='match-card' onclick="showCountdownModal('${esc(title)}', ${match.date || 0}, '${esc(thumbSrc)}', '${altText}')"><img src='${thumbSrc}' alt='${altText}' loading='lazy' onerror="this.onerror=null;this.src='assets/images/logo.png'" /><h6 class='mt-2'>${esc(title)}</h6><small>${esc(category)}</small></div>`;
-      }
+    return `<div class='match-card' onclick="showCountdownModal('${esc(title)}', ${match.date || 0}, '${esc(thumbSrc)}', '${altText}')">
+      <img src='${thumbSrc}' alt='${altText}' loading='lazy' onerror="this.onerror=null;this.src='assets/images/logo.png'" />
+      <h6 class='mt-2'>${esc(title)}</h6>
+      <small>${formatMatchDate(match.date)}</small>
+    </div>`;
+  }
     }
 
     if (isLive) {
-      return `<div class='match-card' onclick="${id ? `window.location.href='watch.html?id=${id}'` : ''}"><div class='live-badge'>LIVE</div><img src='${thumbSrc}' alt='${altText}' loading='lazy' onerror="this.onerror=null;this.src='assets/images/logo.png'" /><h6 class='mt-2'>${esc(title)}</h6><small>${esc(category)}</small></div>`;
-    }
+  return `<div class='match-card' onclick="${id ? `window.location.href='watch.html?id=${id}'` : ''}">
+    <div class='live-badge'>LIVE</div>
+    <img src='${thumbSrc}' alt='${altText}' loading='lazy' onerror="this.onerror=null;this.src='assets/images/logo.png'" />
+    <h6 class='mt-2'>${esc(title)}</h6>
+    <small>${formatMatchDate(match.date)}</small>
+  </div>`;
+}
 
-    return `<div class='match-card' onclick="showCountdownModal('${esc(title)}', ${match.date || 0}, '${esc(thumbSrc)}', '${altText}')"><img src='${thumbSrc}' alt='${altText}' loading='lazy' onerror="this.onerror=null;this.src='assets/images/logo.png'" /><h6 class='mt-2'>${esc(title)}</h6><small>${esc(category)}</small></div>`;
+
+    return `<div class='match-card' onclick="showCountdownModal('${esc(title)}', ${match.date || 0}, '${esc(thumbSrc)}', '${altText}')">
+  <img src='${thumbSrc}' alt='${altText}' loading='lazy' onerror="this.onerror=null;this.src='assets/images/logo.png'" />
+  <h6 class='mt-2'>${esc(title)}</h6>
+  <small>${formatMatchDate(match.date)}</small>
+</div>`;
   }).join('');
 
   container.innerHTML = html;
@@ -134,16 +186,21 @@ function renderUpcomingMatches(containerId, upcomingMatches) {
   upcoming.sort((a, b) => (a.date || 0) - (b.date || 0));
 
   if (!upcoming.length) {
-    container.innerHTML = '<div class="empty-state">No upcoming football matches.</div>';
+    container.innerHTML = '<div class="empty-state">No upcoming football matches. Check back after a while</div>';
     return;
   }
 
   const html = upcoming.map(match => {
-    const imgInfo = getMatchImage(match);
-    const thumbSrc = imgInfo.src;
-    const altText = esc(imgInfo.alt);
-    return `<div class="match-card" onclick="showCountdownModal('${esc(match.title)}', ${match.date || 0}, '${esc(thumbSrc)}', '${altText}')"><img src="${thumbSrc}" alt="${altText}" loading="lazy" onerror="this.onerror=null;this.src='assets/images/logo.png'" /><h6 class="mt-2">${esc(match.title)}</h6><small>${esc(match.category)}</small></div>`;
-  }).join('');
+  const imgInfo = getMatchImage(match);
+  const thumbSrc = imgInfo.src;
+  const altText = esc(imgInfo.alt);
+  return `<div class="match-card" onclick="showCountdownModal('${esc(match.title)}', ${match.date || 0}, '${esc(thumbSrc)}', '${altText}')">
+    <img src="${thumbSrc}" alt="${altText}" loading="lazy" onerror="this.onerror=null;this.src='assets/images/logo.png'" />
+    <h6 class="mt-2">${esc(match.title)}</h6>
+    <small>${formatMatchDate(match.date)}</small>
+  </div>`;
+}).join('');
+
 
   container.innerHTML = html;
   enableCarouselSwipeFor(container);
@@ -229,7 +286,7 @@ function loadPlayerPage(matchId) {
       sidebar.innerHTML = '';
       const otherLiveFootball = matches.filter(m => m.id != matchId && (m.category || '').toLowerCase() === 'football');
       if (otherLiveFootball.length === 0) {
-        sidebar.innerHTML = '<p class="text-muted">No other live football matches.</p>';
+        sidebar.innerHTML = '<p class="text-light fst-italic">No other live football matches.</p>';
         return;
       }
 

@@ -94,6 +94,14 @@ header h1 {
   user-select: none;
   cursor: grabbing;
 }
+.blur-container {
+    background: rgba(33, 33, 33, 0.5); /* semi-transparent dark background */
+    backdrop-filter: blur(4px); /* the blur effect */
+    -webkit-backdrop-filter: blur(1px); /* for Safari */
+    border-radius: 12px; /* rounded corners */
+    padding: 20px;
+    color: white;
+  }
 
 .other-matches-wrapper .row {
   margin-left: 0 !important;
