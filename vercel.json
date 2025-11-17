@@ -1,9 +1,16 @@
 {
+  "rewrites": [
+    { "source": "/matches", "destination": "/matches.html" },
+    { "source": "/watch", "destination": "/watch.html" },
+    { "source": "/legal/about", "destination": "/legal/about.html" },
+    { "source": "/legal/contact", "destination": "/legal/contact.html" },
+    { "source": "/legal/disclaimer", "destination": "/legal/disclaimer.html" },
+    { "source": "/legal/privacy", "destination": "/legal/privacy.html" },
+    { "source": "/legal/terms", "destination": "/legal/terms.html" }
+  ],
   "redirects": [
-    { "source": "/index.html", "destination": "/", "permanent": true },
     { "source": "/matches.html", "destination": "/matches", "permanent": true },
     { "source": "/watch.html", "destination": "/watch", "permanent": true },
-
     { "source": "/legal/about.html", "destination": "/legal/about", "permanent": true },
     { "source": "/legal/contact.html", "destination": "/legal/contact", "permanent": true },
     { "source": "/legal/disclaimer.html", "destination": "/legal/disclaimer", "permanent": true },
